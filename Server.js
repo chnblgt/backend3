@@ -15,6 +15,9 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+// ── Wire up editclub routes ──────────────────────────────────────────────────
+const editclub = require('./editclub');
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -52,7 +55,7 @@ const allowedOrigins = ['http://localhost:3000', FRONTEND].filter(Boolean);
 app.use(cors({
     origin: (origin, cb) => (!origin || allowedOrigins.includes(origin)) ? cb(null, true) : cb(new Error('Not allowed by CORS')),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-admin-secret', 'ngrok-skip-browser-warning'],
+    allowedHeaders: ['Content-Type', 'x-admin-secret', 'x-user-id', 'ngrok-skip-browser-warning'],
     credentials: true,
 }));
 app.use(express.json());
@@ -546,8 +549,10 @@ app.post('/auth/facebook', async (req, res) => {
     }
 });
 
+// ─── FIXED: registerClub now saves owner_id ──────────────────────────────────
 app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'bannerPhotos', maxCount: 5 }]), async (req, res) => {
-    const { name, category, description, email, phone, website, address, district, pricingType, foundedYear, tiers } = req.body;
+    // ✅ Added owner_id here
+    const { name, category, description, email, phone, website, address, district, pricingType, foundedYear, tiers, owner_id } = req.body;
     if (!name || !category || !description || !email)
         return res.status(400).send({ message: "Заавал бөглөх талбарууд дутуу байна", success: false });
 
@@ -560,10 +565,11 @@ app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 
     const token = makeToken();
 
     db.query(
-        `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, approved, logo, banner, tiers, email_verified, verification_token)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12, $13, 0, $14)`,
+        // ✅ Added owner_id column and $15 value
+        `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, owner_id, approved, logo, banner, tiers, email_verified, verification_token)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, $12, $13, $14, 0, $15)`,
         [name, category, description, email, phone || null, website || null, address || null, district || null,
-         pricingType || 'free', foundedYear || null, logoPath, bannerPaths, tiersJson, token],
+         pricingType || 'free', foundedYear || null, owner_id || null, logoPath, bannerPaths, tiersJson, token],
         async (err, result) => {
             if (err) {
                 console.error('registerClub error:', err);
@@ -748,5 +754,8 @@ app.delete('/admin/reject-club/:id', (req, res) => {
         }
     );
 });
+
+// ── Mount editclub routes (PUT /clubs/:id, GET/POST/DELETE members & payments)
+app.use('/', editclub);
 
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
