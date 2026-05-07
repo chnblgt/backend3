@@ -64,3 +64,57 @@ CREATE POLICY "user_own_memberships"
     ON memberships FOR SELECT
     TO authenticated
     USING (true);
+
+DROP POLICY IF EXISTS "service_all_clubs" ON clubs;
+CREATE POLICY "service_all_clubs"
+    ON clubs FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_all_users" ON users;
+CREATE POLICY "service_all_users"
+    ON users FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_all_memberships" ON memberships;
+CREATE POLICY "service_all_memberships"
+    ON memberships FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+UPDATE users SET is_admin = 1 WHERE email = 'duguilanmail@gmail.com';
+UPDATE clubs SET approved = 1 WHERE approved = 0;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS lat FLOAT;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS lng FLOAT;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS tier_name       TEXT;
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS payment_status  TEXT DEFAULT 'free';
+
+CREATE TABLE IF NOT EXISTS payments (
+  id          BIGSERIAL    PRIMARY KEY,
+  club_id     BIGINT       REFERENCES clubs(id) ON DELETE CASCADE,
+  user_id     BIGINT       REFERENCES users(id) ON DELETE CASCADE,
+  amount      NUMERIC,
+  tier_name   TEXT,
+  status      TEXT         DEFAULT 'pending',
+  receipt_url TEXT,
+  paid_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ  DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_club ON payments(club_id);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_all_payments" ON payments;
+CREATE POLICY "service_all_payments"
+    ON payments FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);

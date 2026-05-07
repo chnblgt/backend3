@@ -15,10 +15,11 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// ── Wire up editclub routes ──────────────────────────────────────────────────
 const editclub = require('./editclub');
+app.use('/', editclub);
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS },
@@ -28,8 +29,12 @@ async function sendMail(options) {
     if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASS) {
         console.warn('⚠️  Email not sent: GMAIL_USER or GMAIL_APP_PASS missing'); return;
     }
-    try { await transporter.sendMail(options); console.log(`✉️  Sent → ${options.to}`); }
-    catch (e) { console.error('❌ Email error:', e.message); }
+    try {
+        await transporter.sendMail(options);
+        console.log(`✉️  Sent → ${options.to}`);
+    } catch (e) {
+        console.error('❌ Email error:', e.message);
+    }
 }
 
 function makeToken() { return crypto.randomBytes(32).toString('hex'); }
@@ -51,24 +56,25 @@ const upload = multer({
     },
 });
 
-const allowedOrigins = ['http://localhost:3000', FRONTEND].filter(Boolean);
-app.use(cors({
-    origin: (origin, cb) => (!origin || allowedOrigins.includes(origin)) ? cb(null, true) : cb(new Error('Not allowed by CORS')),
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-admin-secret', 'x-user-id', 'ngrok-skip-browser-warning'],
-    credentials: true,
-}));
-app.use(express.json());
 app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-admin-secret,x-user-id,ngrok-skip-browser-warning,Authorization');
     res.setHeader('ngrok-skip-browser-warning', 'true');
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/', (req, res) => res.send('Server ажиллаж байна!'));
 
 function verifyEmailHtml(displayName, verifyLink, note = '') {
     return `<!DOCTYPE html>
-<html lang="mn">
+<html lang="com">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -84,7 +90,7 @@ function verifyEmailHtml(displayName, verifyLink, note = '') {
               <tr>
                 <td style="background:linear-gradient(135deg,#1a0533,#3b0764);border-radius:14px;padding:12px 22px;">
                   <span style="font-size:19px;font-weight:800;color:#ffffff;letter-spacing:-0.03em;font-family:'Helvetica Neue',Arial,sans-serif;">
-                    Duguilan<span style="color:#c4b5fd;">.mn</span>
+                    Duguilan<span style="color:#c4b5fd;">.com</span>
                   </span>
                 </td>
               </tr>
@@ -161,7 +167,7 @@ function verifyEmailHtml(displayName, verifyLink, note = '') {
         </tr>
         <tr>
           <td align="center" style="padding-top:24px;">
-            <p style="margin:0 0 5px;font-size:12px;color:#9879d4;font-weight:600;font-family:'Helvetica Neue',Arial,sans-serif;">Duguilan.mn — Nest IT School</p>
+            <p style="margin:0 0 5px;font-size:12px;color:#9879d4;font-weight:600;font-family:'Helvetica Neue',Arial,sans-serif;">Duguilan.com — Nest IT School</p>
             <p style="margin:0;font-size:11px;color:#c4b5fd;font-family:'Helvetica Neue',Arial,sans-serif;">Энэ имэйлийг та өөрөө хүсэлт гаргаагүй бол үл тоомсорлоно уу.</p>
           </td>
         </tr>
@@ -174,7 +180,7 @@ function verifyEmailHtml(displayName, verifyLink, note = '') {
 
 function welcomeEmailHtml(username, loginLink) {
     return `<!DOCTYPE html>
-<html lang="mn">
+<html lang="com">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f0ebff;font-family:'Helvetica Neue',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ebff;padding:40px 16px;">
@@ -184,7 +190,7 @@ function welcomeEmailHtml(username, loginLink) {
           <td align="center" style="padding-bottom:20px;">
             <table cellpadding="0" cellspacing="0"><tr>
               <td style="background:linear-gradient(135deg,#1a0533,#3b0764);border-radius:14px;padding:12px 22px;">
-                <span style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-0.03em;">Duguilan<span style="color:#c4b5fd;">.mn</span></span>
+                <span style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-0.03em;">Duguilan<span style="color:#c4b5fd;">.com</span></span>
               </td>
             </tr></table>
           </td>
@@ -221,7 +227,7 @@ function welcomeEmailHtml(username, loginLink) {
           </td>
         </tr>
         <tr><td align="center" style="padding-top:24px;">
-          <p style="margin:0 0 5px;font-size:12px;color:#9879d4;font-weight:600;font-family:'Helvetica Neue',Arial,sans-serif;">Duguilan.mn — Nest IT School</p>
+          <p style="margin:0 0 5px;font-size:12px;color:#9879d4;font-weight:600;font-family:'Helvetica Neue',Arial,sans-serif;">Duguilan.com — Nest IT School</p>
         </td></tr>
       </table>
     </td></tr>
@@ -259,9 +265,9 @@ app.post('/createUser', async (req, res) => {
                 const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=user`;
                 console.log('✅ User created. Verify link:', verifyLink);
                 await sendMail({
-                    from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+                    from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
                     to: email,
-                    subject: 'Duguilan.mn — Имэйл хаягаа баталгаажуулна уу ✉️',
+                    subject: 'Duguilan.com — Имэйл хаягаа баталгаажуулна уу ✉️',
                     html: verifyEmailHtml(username, verifyLink),
                 });
                 res.send({ message: "Бүртгэл амжилттай! Имэйл хаяг руу баталгаажуулах линк илгээлээ.", success: true, requiresVerification: true });
@@ -299,7 +305,6 @@ app.post('/signin', (req, res) => {
     });
 });
 
-// ─── Email Verification ────────────────────────────────────────────────────
 app.get('/verify-email', async (req, res) => {
     const { token, type } = req.query;
     console.log('\n🔍 /verify-email HIT — token:', token, '| type:', type);
@@ -332,9 +337,9 @@ app.get('/verify-email', async (req, res) => {
             if (updateErr) return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
 
             await sendMail({
-                from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
                 to: user.email,
-                subject: 'Duguilan.mn — Тавтай морил! 🎉',
+                subject: 'Duguilan.com — Тавтай морил! 🎉',
                 html: welcomeEmailHtml(user.username, `${FRONTEND}/signin`),
             });
 
@@ -363,9 +368,9 @@ app.get('/verify-email', async (req, res) => {
             if (updateErr) return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
 
             await sendMail({
-                from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
                 to: club.email,
-                subject: `Duguilan.mn — "${club.name}" хянагдаж байна`,
+                subject: `Duguilan.com — "${club.name}" хянагдаж байна`,
                 html: verifyEmailHtml(club.name, '', 'Манай admin хянаж, удахгүй баталгаажуулна.').replace(
                     'Имэйл хаягаа баталгаажуулахын тулд доорх товчийг дарна уу.',
                     `<strong>${club.name}</strong> клубын имэйл баталгаажлаа. Манай admin хянаж удахгүй зөвшөөрнө.`
@@ -373,7 +378,7 @@ app.get('/verify-email', async (req, res) => {
             });
 
             sendMail({
-                from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
                 to: process.env.ADMIN_EMAIL || process.env.GMAIL_USER,
                 subject: `[Duguilan] ✅ Клуб зөвшөөрөл хүлээж байна: ${club.name}`,
                 html: `<div style="font-family:sans-serif;padding:24px;border:1px solid #ede9fe;border-radius:12px;max-width:480px;"><h3 style="color:#1a0533;">Клуб имэйл баталгаажлаа</h3><p><b>Клуб:</b> ${club.name}<br><b>Имэйл:</b> ${club.email}<br><b>ID:</b> ${club.id}</p><p style="color:#7c3aed;font-size:13px;">Admin хэсгээр нэвтэрч клубыг зөвшөөрнө үү.</p></div>`,
@@ -417,9 +422,9 @@ app.get('/verify-and-login', async (req, res) => {
                 return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
 
             await sendMail({
-                from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
                 to: user.email,
-                subject: 'Duguilan.mn — Тавтай морил! 🎉',
+                subject: 'Duguilan.com — Тавтай морил! 🎉',
                 html: welcomeEmailHtml(user.username, `${FRONTEND}/page`),
             });
         }
@@ -473,9 +478,9 @@ app.post('/resend-verification', async (req, res) => {
 
         const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=${type}`;
         await sendMail({
-            from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+            from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
             to: email,
-            subject: 'Duguilan.mn — Имэйл баталгаажуулах линк (дахин)',
+            subject: 'Duguilan.com — Имэйл баталгаажуулах линк (дахин)',
             html: verifyEmailHtml(record[nameCol], verifyLink),
         });
 
@@ -549,12 +554,12 @@ app.post('/auth/facebook', async (req, res) => {
     }
 });
 
-// ─── FIXED: registerClub now saves owner_id ──────────────────────────────────
 app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'bannerPhotos', maxCount: 5 }]), async (req, res) => {
-    // ✅ Added owner_id here
     const { name, category, description, email, phone, website, address, district, pricingType, foundedYear, tiers, owner_id } = req.body;
     if (!name || !category || !description || !email)
         return res.status(400).send({ message: "Заавал бөглөх талбарууд дутуу байна", success: false });
+    if (!owner_id)
+        return res.status(400).send({ message: "Хэрэглэгч нэвтрээгүй байна", success: false });
 
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     const logoPath = req.files?.logo?.[0] ? `${baseUrl}/uploads/${req.files.logo[0].filename}` : null;
@@ -565,11 +570,10 @@ app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 
     const token = makeToken();
 
     db.query(
-        // ✅ Added owner_id column and $15 value
         `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, owner_id, approved, logo, banner, tiers, email_verified, verification_token)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, $12, $13, $14, 0, $15)`,
         [name, category, description, email, phone || null, website || null, address || null, district || null,
-         pricingType || 'free', foundedYear || null, owner_id || null, logoPath, bannerPaths, tiersJson, token],
+         pricingType || 'free', foundedYear || null, owner_id, logoPath, bannerPaths, tiersJson, token],
         async (err, result) => {
             if (err) {
                 console.error('registerClub error:', err);
@@ -577,12 +581,12 @@ app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 
             }
             const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=club`;
             await sendMail({
-                from: `"Duguilan.mn" <${process.env.GMAIL_USER}>`,
+                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
                 to: email,
-                subject: `Duguilan.mn — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
+                subject: `Duguilan.com — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
                 html: verifyEmailHtml(name, verifyLink, 'Баталгаажуулсны дараа admin хянах шатанд орно.'),
             });
-            console.log('✅ Club registered:', name, '| Verify link:', verifyLink);
+            console.log('✅ Club registered:', name, '| owner_id:', owner_id, '| Verify link:', verifyLink);
             res.send({ message: "Клуб бүртгэгдлээ! Имэйл хаяг руу баталгаажуулах линк илгээлээ.", success: true, clubId: result.insertId, requiresVerification: true });
         }
     );
@@ -592,7 +596,7 @@ app.post('/adminCreateClub', upload.fields([{ name: 'logo', maxCount: 1 }, { nam
     if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET)
         return res.status(403).send({ message: "Зөвшөөрөлгүй хандалт", success: false });
 
-    const { name, category, description, email, phone, website, address, district, pricingType, foundedYear } = req.body;
+    const { name, category, description, email, phone, website, address, district, pricingType, foundedYear, lat, lng } = req.body;
     if (!name || !category || !description || !email)
         return res.status(400).send({ message: "Заавал бөглөх талбарууд дутуу байна", success: false });
 
@@ -603,10 +607,11 @@ app.post('/adminCreateClub', upload.fields([{ name: 'logo', maxCount: 1 }, { nam
         : null;
 
     db.query(
-        `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, approved, logo, banner, email_verified)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, 1)`,
+        `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, approved, logo, banner, email_verified, lat, lng)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, 1, $13, $14)`,
         [name, category, description, email, phone || null, website || null, address || null, district || null,
-         pricingType || 'free', foundedYear || null, logoPath, bannerPaths],
+         pricingType || 'free', foundedYear || null, logoPath, bannerPaths,
+         lat ? parseFloat(lat) : null, lng ? parseFloat(lng) : null],
         (err, result) => {
             if (err) {
                 console.error('adminCreateClub error:', err);
@@ -629,15 +634,43 @@ app.get('/getUser', (req, res) => {
 });
 
 app.put('/updateUser/:id', (req, res) => {
-    const { name, bio, location, phone } = req.body;
-    db.query(
-        "UPDATE users SET name = $1, bio = $2, location = $3, phone = $4 WHERE id = $5",
-        [name, bio, location, phone, req.params.id],
-        (err) => {
-            if (err) return res.status(500).send({ message: "Алдаа гарлаа", success: false });
+    const { name, bio, location, phone, avatar } = req.body;
+    db.supabase
+        .from('users')
+        .update({
+            name:     name     ?? null,
+            bio:      bio      ?? null,
+            location: location ?? null,
+            phone:    phone    ?? null,
+            avatar:   avatar   ?? null,
+        })
+        .eq('id', req.params.id)
+        .select()
+        .then(({ error }) => {
+            if (error) {
+                console.error('updateUser error:', error);
+                return res.status(500).send({ message: "Алдаа гарлаа: " + error.message, success: false });
+            }
             res.send({ message: "Профайл шинэчлэгдлээ", success: true });
-        }
-    );
+        });
+});
+
+app.post('/uploadAvatar/:id', upload.single('avatar'), (req, res) => {
+    if (!req.file) return res.status(400).send({ message: "Зураг олдсонгүй", success: false });
+    const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
+    const avatarUrl = `${baseUrl}/uploads/${req.file.filename}`;
+    db.supabase
+        .from('users')
+        .update({ avatar: avatarUrl })
+        .eq('id', req.params.id)
+        .select()
+        .then(({ error }) => {
+            if (error) {
+                console.error('uploadAvatar error:', error);
+                return res.status(500).send({ message: "Алдаа гарлаа", success: false });
+            }
+            res.send({ message: "Профайл зураг шинэчлэгдлээ", success: true, avatarUrl });
+        });
 });
 
 app.get('/check-verified', (req, res) => {
@@ -671,16 +704,46 @@ app.get('/clubs/:id', (req, res) => {
     });
 });
 
-app.post('/joinClub', (req, res) => {
-    const { userId, clubId } = req.body;
+app.post('/joinClub', async (req, res) => {
+    const { userId, clubId, tierId, tierPrice } = req.body;
     if (!userId || !clubId) return res.status(400).send({ message: "userId болон clubId шаардлагатай", success: false });
-    db.query("INSERT INTO memberships (user_id, club_id) VALUES ($1, $2)", [userId, clubId], (err) => {
-        if (err) {
-            if (err.code === 'ER_DUP_ENTRY') return res.status(400).send({ message: "Та аль хэдийн энэ клубт нэгдсэн байна", success: false });
+
+    const isPaid = !!(tierId && tierPrice);
+    const paymentStatus = isPaid ? 'pending' : 'free';
+
+    try {
+        const { error: memErr } = await db.supabase
+            .from('memberships')
+            .insert({
+                user_id:        userId,
+                club_id:        clubId,
+                tier_name:      tierId   || null,
+                payment_status: paymentStatus,
+            });
+
+        if (memErr) {
+            if (memErr.code === '23505') return res.status(400).send({ message: "Та аль хэдийн энэ клубт нэгдсэн байна", success: false });
+            console.error('joinClub membership error:', memErr);
             return res.status(500).send({ success: false, message: "Алдаа гарлаа" });
         }
-        res.send({ message: "Клубт амжилттай нэгдлээ", success: true });
-    });
+        if (isPaid) {
+            const { error: payErr } = await db.supabase
+                .from('payments')
+                .insert({
+                    club_id:   clubId,
+                    user_id:   userId,
+                    tier_name: tierId,
+                    amount:    parseFloat(tierPrice) || 0,
+                    status:    'pending',
+                });
+            if (payErr) console.error('joinClub payment record error:', payErr);
+        }
+
+        res.send({ message: isPaid ? "Клубт нэгдлээ. Төлбөрийн баталгаажуулалтыг хүлээнэ үү." : "Клубт амжилттай нэгдлээ", success: true });
+    } catch (e) {
+        console.error('joinClub error:', e);
+        res.status(500).send({ success: false, message: "Алдаа гарлаа" });
+    }
 });
 
 app.delete('/leaveClub/:userId/:clubId', (req, res) => {
@@ -754,8 +817,5 @@ app.delete('/admin/reject-club/:id', (req, res) => {
         }
     );
 });
-
-// ── Mount editclub routes (PUT /clubs/:id, GET/POST/DELETE members & payments)
-app.use('/', editclub);
 
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
