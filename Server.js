@@ -697,11 +697,22 @@ app.get('/clubs', (req, res) => {
     });
 });
 
-app.get('/clubs/:id', (req, res) => {
-    db.query("SELECT * FROM clubs WHERE id = $1", [req.params.id], (err, result) => {
-        if (err || result.length === 0) return res.status(404).send({ message: "Клуб олдсонгүй", success: false });
-        res.send({ success: true, club: result[0] });
-    });
+app.get('/clubs/:id', async (req, res) => {
+    try {
+        const clubId = parseInt(req.params.id, 10);
+        const { data, error } = await db.supabase
+            .from('clubs')
+            .select('*')
+            .eq('id', clubId)
+            .maybeSingle();
+        if (error) { console.error('GET /clubs/:id error:', error); return res.status(500).send({ success: false, message: 'Server error' }); }
+        if (!data)  return res.status(404).send({ success: false, message: 'Club not found' });
+        console.log('[GET /clubs/' + clubId + '] owner_id=' + data.owner_id + ' qpay=' + JSON.stringify(data.qpay_info) + ' dans=' + JSON.stringify(data.dans_info));
+        res.send({ success: true, club: data });
+    } catch (e) {
+        console.error('GET /clubs/:id exception:', e);
+        res.status(500).send({ success: false, message: 'Server error' });
+    }
 });
 
 app.post('/joinClub', async (req, res) => {
@@ -743,6 +754,24 @@ app.post('/joinClub', async (req, res) => {
     } catch (e) {
         console.error('joinClub error:', e);
         res.status(500).send({ success: false, message: "Алдаа гарлаа" });
+    }
+});
+
+app.get('/membershipStatus/:userId/:clubId', async (req, res) => {
+    const userId = parseInt(req.params.userId, 10);
+    const clubId = parseInt(req.params.clubId, 10);
+    try {
+        const { data, error } = await db.supabase
+            .from('memberships')
+            .select('payment_status, tier_name')
+            .eq('user_id', userId)
+            .eq('club_id', clubId)
+            .maybeSingle();
+        if (error) return res.status(500).send({ success: false });
+        if (!data)  return res.send({ success: true, payment_status: null });
+        res.send({ success: true, payment_status: data.payment_status, tier_name: data.tier_name });
+    } catch (e) {
+        res.status(500).send({ success: false });
     }
 });
 

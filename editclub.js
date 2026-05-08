@@ -19,17 +19,17 @@ const upload = multer({
   },
 });
 
-// ─── PUT /clubs/:id — edit club info ────────────────────────────────────────
 router.put('/clubs/:id', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'bannerPhotos', maxCount: 5 }]), async (req, res) => {
-  const clubId           = req.params.id;
-  const requestingUserId = req.headers['x-user-id'];
+  const clubId           = parseInt(req.params.id, 10);
+  const requestingUserId = parseInt(req.headers['x-user-id'], 10);
   const { name, category, description, email, phone, website, address, district, foundedYear, lat, lng, existingBanners } = req.body;
+  const qpay_info = typeof req.body.qpay_info === 'string' ? req.body.qpay_info.trim() : null;
+  const dans_info = typeof req.body.dans_info === 'string' ? req.body.dans_info.trim() : null;
 
   if (!name || !category || !description || !email || !address)
     return res.status(400).send({ message: 'Заавал бөглөх талбаруудыг бөглөнө үү.', success: false });
 
   try {
-    // Check ownership
     const { data: clubs, error: findErr } = await supabase
       .from('clubs').select('*').eq('id', clubId);
 
@@ -37,17 +37,14 @@ router.put('/clubs/:id', upload.fields([{ name: 'logo', maxCount: 1 }, { name: '
       return res.status(404).send({ message: 'Клуб олдсонгүй', success: false });
 
     const club = clubs[0];
-    if (String(club.owner_id) !== String(requestingUserId))
+    if (club.owner_id !== requestingUserId)
       return res.status(403).send({ message: 'Энэ клубыг засах эрх байхгүй', success: false });
 
     const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 8000}`;
-
-    // Logo: keep existing unless a new one was uploaded
     let logoUrl = club.logo;
     if (req.files?.logo?.[0])
       logoUrl = `${baseUrl}/uploads/${req.files.logo[0].filename}`;
 
-    // Banners: merge kept existing ones + newly uploaded
     let keptBanners = [];
     try { keptBanners = existingBanners ? JSON.parse(existingBanners) : []; } catch { keptBanners = []; }
     const newBannerUrls = req.files?.bannerPhotos?.length
@@ -55,30 +52,38 @@ router.put('/clubs/:id', upload.fields([{ name: 'logo', maxCount: 1 }, { name: '
       : [];
     const allBanners = [...keptBanners, ...newBannerUrls].slice(0, 5);
 
-    const { error: updateErr } = await supabase
+    const updatePayload = {
+      name,
+      category,
+      description,
+      email,
+      phone:        phone       || null,
+      website:      website     || null,
+      address,
+      district:     district    || null,
+      founded_year: foundedYear || null,
+      lat:          lat         ? parseFloat(lat) : null,
+      lng:          lng         ? parseFloat(lng) : null,
+      logo:         logoUrl,
+      banner:       JSON.stringify(allBanners),
+      qpay_info:    qpay_info   || null,
+      dans_info:    dans_info   || null,
+    };
+
+    console.log(`[editclub] club=${clubId} qpay_info=${JSON.stringify(updatePayload.qpay_info)} dans_info=${JSON.stringify(updatePayload.dans_info)}`);
+
+    const { data: updated, error: updateErr } = await supabase
       .from('clubs')
-      .update({
-        name,
-        category,
-        description,
-        email,
-        phone:        phone        || null,
-        website:      website      || null,
-        address,
-        district:     district     || null,
-        founded_year: foundedYear  || null,
-        lat:          lat          || null,
-        lng:          lng          || null,
-        logo:         logoUrl,
-        banner:       JSON.stringify(allBanners),
-      })
-      .eq('id', clubId);
+      .update(updatePayload)
+      .eq('id', clubId)
+      .select('id, qpay_info, dans_info');
 
     if (updateErr) {
       console.error('editclub update error:', updateErr);
       return res.status(500).send({ message: 'Датанд алдаа гарлаа', success: false });
     }
 
+    console.log(`[editclub] saved:`, updated);
     res.send({ success: true, message: 'Клуб амжилттай шинэчлэгдлээ!' });
   } catch (e) {
     console.error('editclub error:', e);
@@ -86,7 +91,6 @@ router.put('/clubs/:id', upload.fields([{ name: 'logo', maxCount: 1 }, { name: '
   }
 });
 
-// ─── GET /club/:clubId/members ───────────────────────────────────────────────
 router.get('/club/:clubId/members', async (req, res) => {
   const requestingUserId = req.headers['x-user-id'];
   try {
@@ -136,7 +140,6 @@ router.get('/club/:clubId/members', async (req, res) => {
   }
 });
 
-// ─── GET /club/:clubId/payments ──────────────────────────────────────────────
 router.get('/club/:clubId/payments', async (req, res) => {
   const requestingUserId = req.headers['x-user-id'];
   try {
@@ -176,7 +179,6 @@ router.get('/club/:clubId/payments', async (req, res) => {
   }
 });
 
-// ─── POST /club/:clubId/payments/:paymentId/confirm ──────────────────────────
 router.post('/club/:clubId/payments/:paymentId/confirm', async (req, res) => {
   const requestingUserId = req.headers['x-user-id'];
   try {
@@ -202,7 +204,6 @@ router.post('/club/:clubId/payments/:paymentId/confirm', async (req, res) => {
   }
 });
 
-// ─── POST /club/:clubId/payments/:paymentId/reject ───────────────────────────
 router.post('/club/:clubId/payments/:paymentId/reject', async (req, res) => {
   const requestingUserId = req.headers['x-user-id'];
   try {
@@ -220,7 +221,6 @@ router.post('/club/:clubId/payments/:paymentId/reject', async (req, res) => {
   }
 });
 
-// ─── DELETE /club/:clubId/members/:memberId ──────────────────────────────────
 router.delete('/club/:clubId/members/:memberId', async (req, res) => {
   const requestingUserId = req.headers['x-user-id'];
   try {

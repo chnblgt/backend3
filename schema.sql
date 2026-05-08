@@ -118,3 +118,6 @@ CREATE POLICY "service_all_payments"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS qpay_info TEXT;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS dans_info TEXT;
