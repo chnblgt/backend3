@@ -46,15 +46,15 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + path.extname(file.originalname)),
 });
-const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const ok = /jpeg|jpg|png|gif|webp/.test(path.extname(file.originalname).toLowerCase())
-                && /jpeg|jpg|png|gif|webp/.test(file.mimetype);
-        ok ? cb(null, true) : cb(new Error('Only image files are allowed'));
-    },
-});
+const fileFilter = (req, file, cb) => {
+    const imageFields = ["logo", "bannerPhotos"];
+    if (imageFields.includes(file.fieldname)) {
+      if (!file.mimetype.startsWith("image/")) {
+        return cb(new Error("Only image files are allowed"));
+      }
+    }
+    cb(null, true);
+  };
 
 app.use((req, res, next) => {
     const origin = req.headers.origin;
