@@ -716,13 +716,34 @@ app.get('/clubs/:id', async (req, res) => {
 });
 
 app.post('/joinClub', async (req, res) => {
-    const { userId, clubId, tierId, tierPrice } = req.body;
+    const { userId, clubId, tierId, tierPrice, paymentNote } = req.body;
     if (!userId || !clubId) return res.status(400).send({ message: "userId болон clubId шаардлагатай", success: false });
 
     const isPaid = !!(tierId && tierPrice);
     const paymentStatus = isPaid ? 'pending' : 'free';
 
     try {
+        // Check if already a member
+        const { data: existing } = await db.supabase
+            .from('memberships')
+            .select('id, payment_status')
+            .eq('user_id', userId)
+            .eq('club_id', clubId)
+            .maybeSingle();
+
+        if (existing) {
+            // If already pending, just update the payment note
+            if (existing.payment_status === 'pending' && isPaid) {
+                await db.supabase.from('payments')
+                    .update({ payment_note: paymentNote || null })
+                    .eq('club_id', clubId)
+                    .eq('user_id', userId)
+                    .eq('status', 'pending');
+                return res.send({ message: "Төлбөрийн мэдэгдэл шинэчлэгдлээ.", success: true });
+            }
+            return res.status(400).send({ message: "Та аль хэдийн энэ клубт нэгдсэн байна", success: false });
+        }
+
         const { error: memErr } = await db.supabase
             .from('memberships')
             .insert({
@@ -737,23 +758,98 @@ app.post('/joinClub', async (req, res) => {
             console.error('joinClub membership error:', memErr);
             return res.status(500).send({ success: false, message: "Алдаа гарлаа" });
         }
+
         if (isPaid) {
             const { error: payErr } = await db.supabase
                 .from('payments')
                 .insert({
-                    club_id:   clubId,
-                    user_id:   userId,
-                    tier_name: tierId,
-                    amount:    parseFloat(tierPrice) || 0,
-                    status:    'pending',
+                    club_id:      clubId,
+                    user_id:      userId,
+                    tier_name:    tierId,
+                    amount:       parseFloat(tierPrice) || 0,
+                    status:       'pending',
+                    payment_note: paymentNote || null,
                 });
             if (payErr) console.error('joinClub payment record error:', payErr);
+
+            // Get club owner email to notify them
+            try {
+                const { data: clubData } = await db.supabase
+                    .from('clubs')
+                    .select('name, email')
+                    .eq('id', clubId)
+                    .maybeSingle();
+                const { data: userData } = await db.supabase
+                    .from('users')
+                    .select('username, email')
+                    .eq('id', userId)
+                    .maybeSingle();
+
+                if (clubData && userData) {
+                    await sendMail({
+                        from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                        to: clubData.email,
+                        subject: `[Duguilan] Шинэ гишүүний хүсэлт — ${clubData.name}`,
+                        html: `<div style="font-family:sans-serif;padding:24px;border:1px solid #e5e7eb;border-radius:12px;max-width:480px;">
+                            <h3 style="color:#1a0533;margin:0 0 12px;">Шинэ төлбөрийн мэдэгдэл</h3>
+                            <p style="color:#374151;"><b>${userData.username}</b> (${userData.email}) таны <b>${clubData.name}</b> клубт нэгдэхийг хүсч, төлбөр төлсөн гэж мэдэгдлээ.</p>
+                            <p><b>Тиер:</b> ${tierId} — ₮${Number(tierPrice).toLocaleString()}</p>
+                            ${paymentNote ? `<p style="background:#f5f0ff;padding:12px;border-radius:8px;color:#4c1d95;"><b>Тэмдэглэл:</b> ${paymentNote}</p>` : ''}
+                            <p style="color:#6b7280;font-size:13px;">Dashboard-аасаа баталгаажуулна уу.</p>
+                        </div>`,
+                    });
+                }
+            } catch (mailErr) {
+                console.error('joinClub notify mail error:', mailErr.message);
+            }
         }
 
-        res.send({ message: isPaid ? "Клубт нэгдлээ. Төлбөрийн баталгаажуулалтыг хүлээнэ үү." : "Клубт амжилттай нэгдлээ", success: true });
+        res.send({ message: isPaid ? "Хүсэлт илгээгдлээ. Клубын эзэн баталгаажуулна." : "Клубт амжилттай нэгдлээ", success: true });
     } catch (e) {
         console.error('joinClub error:', e);
         res.status(500).send({ success: false, message: "Алдаа гарлаа" });
+    }
+});
+
+// Owner manually adds a member by email
+app.post('/club/:clubId/addMember', async (req, res) => {
+    const requestingUserId = req.headers['x-user-id'];
+    const { clubId } = req.params;
+    const { email, tier_name, payment_status } = req.body;
+
+    if (!email) return res.status(400).send({ success: false, message: "Email шаардлагатай" });
+
+    try {
+        const { data: clubs } = await db.supabase.from('clubs').select('owner_id').eq('id', clubId);
+        if (!clubs || clubs.length === 0) return res.status(404).send({ success: false });
+        if (String(clubs[0].owner_id) !== String(requestingUserId))
+            return res.status(403).send({ success: false, message: "Эрх байхгүй" });
+
+        const { data: userFound } = await db.supabase.from('users').select('id').eq('email', email).maybeSingle();
+        if (!userFound) return res.status(404).send({ success: false, message: "Тухайн имэйлтэй хэрэглэгч олдсонгүй" });
+
+        // Upsert: if already exists update status, otherwise insert
+        const { data: existing } = await db.supabase.from('memberships')
+            .select('id').eq('user_id', userFound.id).eq('club_id', clubId).maybeSingle();
+
+        if (existing) {
+            await db.supabase.from('memberships')
+                .update({ payment_status: payment_status || 'confirmed', tier_name: tier_name || null })
+                .eq('user_id', userFound.id).eq('club_id', clubId);
+        } else {
+            const { error: memErr } = await db.supabase.from('memberships').insert({
+                user_id:        userFound.id,
+                club_id:        clubId,
+                tier_name:      tier_name      || null,
+                payment_status: payment_status || 'confirmed',
+            });
+            if (memErr) return res.status(500).send({ success: false, message: "Алдаа гарлаа" });
+        }
+
+        res.send({ success: true, message: "Гишүүн амжилттай нэмэгдлээ" });
+    } catch (e) {
+        console.error('addMember error:', e);
+        res.status(500).send({ success: false, message: "Серверт алдаа гарлаа" });
     }
 });
 

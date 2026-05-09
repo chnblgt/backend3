@@ -153,7 +153,7 @@ router.get('/club/:clubId/payments', async (req, res) => {
 
     const { data: payments, error: pErr } = await supabase
       .from('payments')
-      .select('*')
+      .select('id, club_id, user_id, amount, tier_name, status, receipt_url, paid_at, created_at, payment_note')
       .eq('club_id', req.params.clubId)
       .order('created_at', { ascending: false });
 
