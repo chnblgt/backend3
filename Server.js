@@ -47,14 +47,19 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + path.extname(file.originalname)),
 });
 const fileFilter = (req, file, cb) => {
-    const imageFields = ["logo", "bannerPhotos"];
+    const imageFields = ["logo", "bannerPhotos", "avatar"];
     if (imageFields.includes(file.fieldname)) {
-      if (!file.mimetype.startsWith("image/")) {
-        return cb(new Error("Only image files are allowed"));
-      }
+        if (!file.mimetype.startsWith("image/")) {
+            return cb(new Error("Only image files are allowed"), false);
+        }
     }
     cb(null, true);
-  };
+};
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter,
+});
 
 app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -555,7 +560,7 @@ app.post('/auth/facebook', async (req, res) => {
 });
 
 app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'bannerPhotos', maxCount: 5 }]), async (req, res) => {
-    const { name, category, description, email, phone, website, address, district, pricingType, foundedYear, tiers, owner_id } = req.body;
+    const { name, category, description, email, phone, website, address, district, pricingType, foundedYear, tiers, owner_id, lat, lng } = req.body;
     if (!name || !category || !description || !email)
         return res.status(400).send({ message: "Заавал бөглөх талбарууд дутуу байна", success: false });
     if (!owner_id)
@@ -570,24 +575,30 @@ app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 
     const token = makeToken();
 
     db.query(
-        `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, owner_id, approved, logo, banner, tiers, email_verified, verification_token)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, $12, $13, $14, 0, $15)`,
+        `INSERT INTO clubs (name, category, description, email, phone, website, address, district, pricing_type, founded_year, owner_id, approved, logo, banner, tiers, email_verified, verification_token, lat, lng)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, $12, $13, $14, 0, $15, $16, $17)`,
         [name, category, description, email, phone || null, website || null, address || null, district || null,
-         pricingType || 'free', foundedYear || null, owner_id, logoPath, bannerPaths, tiersJson, token],
+         pricingType || 'free', foundedYear || null, owner_id, logoPath, bannerPaths, tiersJson, token,
+         lat ? parseFloat(lat) : null, lng ? parseFloat(lng) : null],
         async (err, result) => {
             if (err) {
                 console.error('registerClub error:', err);
                 return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
             }
-            const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=club`;
-            await sendMail({
-                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
-                to: email,
-                subject: `Duguilan.com — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
-                html: verifyEmailHtml(name, verifyLink, 'Баталгаажуулсны дараа admin хянах шатанд орно.'),
-            });
-            console.log('✅ Club registered:', name, '| owner_id:', owner_id, '| Verify link:', verifyLink);
-            res.send({ message: "Клуб бүртгэгдлээ! Имэйл хаяг руу баталгаажуулах линк илгээлээ.", success: true, clubId: result.insertId, requiresVerification: true });
+            try {
+                const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=club`;
+                await sendMail({
+                    from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                    to: email,
+                    subject: `Duguilan.com — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
+                    html: verifyEmailHtml(name, verifyLink, 'Баталгаажуулсны дараа admin хянах шатанд орно.'),
+                });
+                console.log('✅ Club registered:', name, '| owner_id:', owner_id, '| Verify link:', verifyLink);
+                res.send({ message: "Клуб бүртгэгдлээ! Имэйл хаяг руу баталгаажуулах линк илгээлээ.", success: true, clubId: result.insertId, requiresVerification: true });
+            } catch (e) {
+                console.error('registerClub post-insert error:', e);
+                res.status(500).send({ message: "Серверт алдаа гарлаа", success: false });
+            }
         }
     );
 });
@@ -941,6 +952,18 @@ app.delete('/admin/reject-club/:id', (req, res) => {
             res.send({ success: true, message: "Клуб устгагдлаа" });
         }
     );
+});
+
+// Global error handler — catches multer errors (bad file type, size limit) and any other unhandled errors
+app.use((err, req, res, next) => {
+    if (err) {
+        console.error('Global error handler:', err.message);
+        const status = err instanceof multer.MulterError ? 400
+                     : err.message === 'Only image files are allowed' ? 400
+                     : 500;
+        return res.status(status).send({ message: err.message || 'Серверт алдаа гарлаа', success: false });
+    }
+    next();
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
