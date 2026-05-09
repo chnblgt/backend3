@@ -23,6 +23,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS },
+    family: 4,   // ← add this line — forces IPv4
 });
 
 async function sendMail(options) {
