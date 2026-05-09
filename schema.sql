@@ -121,3 +121,4 @@ CREATE POLICY "service_all_payments"
 
 ALTER TABLE clubs ADD COLUMN IF NOT EXISTS qpay_info TEXT;
 ALTER TABLE clubs ADD COLUMN IF NOT EXISTS dans_info TEXT;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_note TEXT;
