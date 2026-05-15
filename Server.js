@@ -15,16 +15,52 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// ✅ FIX 1: CORS must be first — before any router
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-admin-secret,x-user-id,ngrok-skip-browser-warning,Authorization');
+    res.setHeader('ngrok-skip-browser-warning', 'true');
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
+    next();
+});
+
 const editclub = require('./editclub');
 app.use('/', editclub);
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
+// ✅ FIX 2: Use explicit host + port instead of service:'gmail' to force IPv4
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    family: 4,
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS },
-    family: 4, 
+    tls: { rejectUnauthorized: false },
 });
+// In db.js or a new file uploadToSupabase.js
+async function uploadToSupabase(file) {
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`;
+    
+    const { data, error } = await supabase.storage
+      .from('club-images')          // create this bucket in Supabase dashboard
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+  
+    if (error) throw error;
+  
+    const { data: { publicUrl } } = supabase.storage
+      .from('club-images')
+      .getPublicUrl(fileName);
+  
+    return publicUrl;
+  }
 
 async function sendMail(options) {
     if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASS) {
@@ -43,7 +79,7 @@ function makeToken() { return crypto.randomBytes(32).toString('hex'); }
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-const storage = multer.diskStorage({
+const storage = multer.memoryStorage ({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + path.extname(file.originalname)),
 });
@@ -62,17 +98,6 @@ const upload = multer({
     fileFilter,
 });
 
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-admin-secret,x-user-id,ngrok-skip-browser-warning,Authorization');
-    res.setHeader('ngrok-skip-browser-warning', 'true');
-    if (req.method === 'OPTIONS') return res.sendStatus(200);
-    next();
-});
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
