@@ -23,7 +23,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS },
-    family: 4,   // ← add this line — forces IPv4
+    family: 4, 
 });
 
 async function sendMail(options) {
@@ -735,7 +735,6 @@ app.post('/joinClub', async (req, res) => {
     const paymentStatus = isPaid ? 'pending' : 'free';
 
     try {
-        // Check if already a member
         const { data: existing } = await db.supabase
             .from('memberships')
             .select('id, payment_status')
@@ -744,7 +743,6 @@ app.post('/joinClub', async (req, res) => {
             .maybeSingle();
 
         if (existing) {
-            // If already pending, just update the payment note
             if (existing.payment_status === 'pending' && isPaid) {
                 await db.supabase.from('payments')
                     .update({ payment_note: paymentNote || null })
@@ -783,8 +781,6 @@ app.post('/joinClub', async (req, res) => {
                     payment_note: paymentNote || null,
                 });
             if (payErr) console.error('joinClub payment record error:', payErr);
-
-            // Get club owner email to notify them
             try {
                 const { data: clubData } = await db.supabase
                     .from('clubs')
@@ -823,7 +819,6 @@ app.post('/joinClub', async (req, res) => {
     }
 });
 
-// Owner manually adds a member by email
 app.post('/club/:clubId/addMember', async (req, res) => {
     const requestingUserId = req.headers['x-user-id'];
     const { clubId } = req.params;
@@ -839,8 +834,6 @@ app.post('/club/:clubId/addMember', async (req, res) => {
 
         const { data: userFound } = await db.supabase.from('users').select('id').eq('email', email).maybeSingle();
         if (!userFound) return res.status(404).send({ success: false, message: "Тухайн имэйлтэй хэрэглэгч олдсонгүй" });
-
-        // Upsert: if already exists update status, otherwise insert
         const { data: existing } = await db.supabase.from('memberships')
             .select('id').eq('user_id', userFound.id).eq('club_id', clubId).maybeSingle();
 
@@ -954,8 +947,6 @@ app.delete('/admin/reject-club/:id', (req, res) => {
         }
     );
 });
-
-// Global error handler — catches multer errors (bad file type, size limit) and any other unhandled errors
 app.use((err, req, res, next) => {
     if (err) {
         console.error('Global error handler:', err.message);

@@ -33,23 +33,17 @@ function throwSupabaseError(error) {
     if (error.code === '23505') err.code = 'ER_DUP_ENTRY';
     throw err;
 }
-
-// FIX: extract WHERE clause correctly (greedy, handles multi-condition AND clauses)
 function extractWhereClause(sql) {
     const m = sql.match(/\bwhere\b\s+(.+?)(?:\s+order\s+by\b|\s+limit\b|$)/is);
     return m ? m[1].trim() : null;
 }
 
 function applyWhere(query, whereClause, params) {
-    // Split on AND (case-insensitive), handle each condition
     const conditions = whereClause.split(/\s+and\s+/i);
     for (const cond of conditions) {
         const trimmed = cond.trim();
-        // $N placeholder  →  col = $1
         const paramEq = trimmed.match(/^(\w+)\s*=\s*\$(\d+)$/i);
-        // literal number  →  col = 1
         const litNum  = trimmed.match(/^(\w+)\s*=\s*(-?\d+)$/i);
-        // literal string  →  col = 'value'
         const litStr  = trimmed.match(/^(\w+)\s*=\s*'([^']*)'$/i);
 
         if (paramEq) {
@@ -68,8 +62,6 @@ async function handleSelect(sql, params) {
     const lower = sql.toLowerCase();
     const table = extractTable(sql);
     if (!table) throw new Error('Could not determine table from SELECT');
-
-    // COUNT(*) AS alias
     const countMatch = sql.match(/count\(\*\)\s+as\s+(\w+)/i);
     if (countMatch) {
         const alias = countMatch[1];
@@ -104,7 +96,6 @@ async function handleSelect(sql, params) {
 }
 
 async function handleJoin(sql, params) {
-    // memberships JOIN clubs via user_id
     const userIdMatch = sql.match(/memberships\.user_id\s*=\s*\$1/i);
     if (userIdMatch && params[0]) {
         const { data: memberships, error: mErr } = await supabase
@@ -129,15 +120,19 @@ async function handleJoin(sql, params) {
 async function handleInsert(sql, params) {
     const table = extractTable(sql);
     if (!table) throw new Error('Could not determine table from INSERT');
-
-    const colMatch = sql.match(/\(([^)]+)\)\s*values/i);
-    if (!colMatch) throw new Error('Could not parse INSERT columns');
-    const cols = colMatch[1].split(',').map(c => c.trim());
-
-    const valuesIdx = sql.toLowerCase().indexOf('values');
+    const lowerSql = sql.toLowerCase();
+    const valuesIdx = lowerSql.indexOf('values');
     if (valuesIdx === -1) throw new Error('Could not find VALUES in INSERT');
-    const afterValues = sql.slice(valuesIdx + 6).trim();
+    const beforeValues = sql.slice(0, valuesIdx);
+    const colStart = beforeValues.indexOf('(');
+    const colEnd   = beforeValues.lastIndexOf(')');
+    if (colStart === -1 || colEnd === -1) throw new Error('Could not parse INSERT columns');
 
+    const cols = beforeValues
+        .slice(colStart + 1, colEnd)
+        .split(',')
+        .map(c => c.trim().replace(/\n/g, '').replace(/\s+/g, ''));
+    const afterValues = sql.slice(valuesIdx + 6).trim();
     let depth = 0, start = -1, end = -1;
     for (let i = 0; i < afterValues.length; i++) {
         if (afterValues[i] === '(') { if (depth === 0) start = i; depth++; }
@@ -150,9 +145,7 @@ async function handleInsert(sql, params) {
     cols.forEach((col, i) => {
         const vp = valueParts[i] || '';
         if (/^\$\d+$/.test(vp)) {
-            // $N placeholder — use params index
-            const idx = parseInt(vp.slice(1)) - 1;
-            obj[col] = params[idx] ?? null;
+            obj[col] = params[parseInt(vp.slice(1)) - 1] ?? null;
         } else if (vp.toUpperCase() === 'NULL') {
             obj[col] = null;
         } else if (!isNaN(Number(vp)) && vp !== '') {
@@ -162,7 +155,6 @@ async function handleInsert(sql, params) {
         }
     });
 
-    // FIX: use .maybeSingle() so missing row doesn't throw; fall back to select after insert
     const { data, error } = await supabase
         .from(table)
         .insert(obj)
@@ -204,8 +196,6 @@ async function handleUpdate(sql, params) {
     });
 
     let query = supabase.from(table).update(obj);
-
-    // FIX: use greedy WHERE extraction
     const whereClause = extractWhereClause(sql);
     if (whereClause) query = applyWhere(query, whereClause, params);
 
@@ -219,8 +209,6 @@ async function handleDelete(sql, params) {
     if (!table) throw new Error('Could not determine table from DELETE');
 
     let query = supabase.from(table).delete();
-
-    // FIX: use greedy WHERE extraction so compound AND conditions are captured
     const whereClause = extractWhereClause(sql);
     if (whereClause) query = applyWhere(query, whereClause, params);
 
