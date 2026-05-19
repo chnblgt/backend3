@@ -285,7 +285,7 @@ app.post('/createUser', async (req, res) => {
                 const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=user`;
                 console.log('✅ User created. Verify link:', verifyLink);
                 await sendMail({
-                    from: "Duguilan.com <onboarding@resend.dev>",
+                    from: "Duguilan.com <noreply@duguilan.com>",
                     to: email,
                     subject: 'Duguilan.com — Имэйл хаягаа баталгаажуулна уу ✉️',
                     html: verifyEmailHtml(username, verifyLink),
@@ -357,7 +357,7 @@ app.get('/verify-email', async (req, res) => {
             if (updateErr) return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
 
             await sendMail({
-                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                from: "Duguilan.com <noreply@duguilan.com>",
                 to: user.email,
                 subject: 'Duguilan.com — Тавтай морил! 🎉',
                 html: welcomeEmailHtml(user.username, `${FRONTEND}/signin`),
@@ -388,7 +388,7 @@ app.get('/verify-email', async (req, res) => {
             if (updateErr) return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
 
             await sendMail({
-                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                from: "Duguilan.com <noreply@duguilan.com>",
                 to: club.email,
                 subject: `Duguilan.com — "${club.name}" хянагдаж байна`,
                 html: verifyEmailHtml(club.name, '', 'Манай admin хянаж, удахгүй баталгаажуулна.').replace(
@@ -398,7 +398,7 @@ app.get('/verify-email', async (req, res) => {
             });
 
             sendMail({
-                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                from: "Duguilan.com <noreply@duguilan.com>",
                 to: process.env.ADMIN_EMAIL || process.env.GMAIL_USER,
                 subject: `[Duguilan] ✅ Клуб зөвшөөрөл хүлээж байна: ${club.name}`,
                 html: `<div style="font-family:sans-serif;padding:24px;border:1px solid #ede9fe;border-radius:12px;max-width:480px;"><h3 style="color:#1a0533;">Клуб имэйл баталгаажлаа</h3><p><b>Клуб:</b> ${club.name}<br><b>Имэйл:</b> ${club.email}<br><b>ID:</b> ${club.id}</p><p style="color:#7c3aed;font-size:13px;">Admin хэсгээр нэвтэрч клубыг зөвшөөрнө үү.</p></div>`,
@@ -442,7 +442,7 @@ app.get('/verify-and-login', async (req, res) => {
                 return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
 
             await sendMail({
-                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                from: "Duguilan.com <noreply@duguilan.com>",
                 to: user.email,
                 subject: 'Duguilan.com — Тавтай морил! 🎉',
                 html: welcomeEmailHtml(user.username, `${FRONTEND}/page`),
@@ -498,7 +498,7 @@ app.post('/resend-verification', async (req, res) => {
 
         const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=${type}`;
         await sendMail({
-            from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+            from: "Duguilan.com <noreply@duguilan.com>",
             to: email,
             subject: 'Duguilan.com — Имэйл баталгаажуулах линк (дахин)',
             html: verifyEmailHtml(record[nameCol], verifyLink),
@@ -602,7 +602,7 @@ app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 
             }
             const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=club`;
             sendMail({
-                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                from: "Duguilan.com <noreply@duguilan.com>",
                 to: email,
                 subject: `Duguilan.com — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
                 html: verifyEmailHtml(name, verifyLink, 'Баталгаажуулсны дараа admin хянах шатанд орно.'),
@@ -805,7 +805,7 @@ app.post('/joinClub', async (req, res) => {
 
                 if (clubData && userData) {
                     await sendMail({
-                        from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                        from: "Duguilan.com <noreply@duguilan.com>",
                         to: clubData.email,
                         subject: `[Duguilan] Шинэ гишүүний хүсэлт — ${clubData.name}`,
                         html: `<div style="font-family:sans-serif;padding:24px;border:1px solid #e5e7eb;border-radius:12px;max-width:480px;">
