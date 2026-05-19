@@ -17,7 +17,6 @@ const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// ✅ FIX 1: CORS must be first — before any router
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
@@ -33,21 +32,13 @@ app.use((req, res, next) => {
 const editclub = require('./editclub');
 app.use('/', editclub);
 
-// ✅ FIX 2: Use explicit host + port instead of service:'gmail' to force IPv4
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    family: 4,
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS },
-    tls: { rejectUnauthorized: false },
-});
-// In db.js or a new file uploadToSupabase.js
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 async function uploadToSupabase(file) {
     const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`;
     
     const { data, error } = await supabase.storage
-      .from('club-images')          // create this bucket in Supabase dashboard
+      .from('club-images')         
       .upload(fileName, file.buffer, {
         contentType: file.mimetype,
         upsert: false,
@@ -62,13 +53,10 @@ async function uploadToSupabase(file) {
     return publicUrl;
   }
 
-async function sendMail(options) {
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASS) {
-        console.warn('⚠️  Email not sent: GMAIL_USER or GMAIL_APP_PASS missing'); return;
-    }
+  async function sendMail({ from, to, subject, html }) {
     try {
-        await transporter.sendMail(options);
-        console.log(`✉️  Sent → ${options.to}`);
+        await resend.emails.send({ from, to, subject, html });
+        console.log(`✉️  Sent → ${to}`);
     } catch (e) {
         console.error('❌ Email error:', e.message);
     }
@@ -79,9 +67,10 @@ function makeToken() { return crypto.randomBytes(32).toString('hex'); }
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-const storage = multer.memoryStorage ({
+const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + path.extname(file.originalname)),
+    filename: (req, file, cb) =>
+        cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + path.extname(file.originalname)),
 });
 const fileFilter = (req, file, cb) => {
     const imageFields = ["logo", "bannerPhotos", "avatar"];
@@ -606,25 +595,21 @@ app.post('/registerClub', upload.fields([{ name: 'logo', maxCount: 1 }, { name: 
         [name, category, description, email, phone || null, website || null, address || null, district || null,
          pricingType || 'free', foundedYear || null, owner_id, logoPath, bannerPaths, tiersJson, token,
          lat ? parseFloat(lat) : null, lng ? parseFloat(lng) : null],
-        async (err, result) => {
+         async (err, result) => {
             if (err) {
                 console.error('registerClub error:', err);
                 return res.status(500).send({ message: "Датанд алдаа гарлаа", success: false });
             }
-            try {
-                const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=club`;
-                await sendMail({
-                    from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
-                    to: email,
-                    subject: `Duguilan.com — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
-                    html: verifyEmailHtml(name, verifyLink, 'Баталгаажуулсны дараа admin хянах шатанд орно.'),
-                });
-                console.log('✅ Club registered:', name, '| owner_id:', owner_id, '| Verify link:', verifyLink);
-                res.send({ message: "Клуб бүртгэгдлээ! Имэйл хаяг руу баталгаажуулах линк илгээлээ.", success: true, clubId: result.insertId, requiresVerification: true });
-            } catch (e) {
-                console.error('registerClub post-insert error:', e);
-                res.status(500).send({ message: "Серверт алдаа гарлаа", success: false });
-            }
+            const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=club`;
+            sendMail({
+                from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                to: email,
+                subject: `Duguilan.com — "${name}" клубын имэйл хаягаа баталгаажуулна уу ✉️`,
+                html: verifyEmailHtml(name, verifyLink, 'Баталгаажуулсны дараа admin хянах шатанд орно.'),
+            }).catch(e => console.error('registerClub email error (non-fatal):', e.message));
+            
+            console.log('✅ Club registered:', name, '| owner_id:', owner_id);
+            res.send({ message: "Клуб бүртгэгдлээ! Имэйл хаяг руу баталгаажуулах линк илгээлээ.", success: true, clubId: result.insertId, requiresVerification: true });
         }
     );
 });
@@ -936,7 +921,7 @@ app.get('/admin/pending-clubs', (req, res) => {
         return res.status(403).send({ message: "Зөвшөөрөлгүй хандалт", success: false });
 
     db.query(
-        "SELECT * FROM clubs WHERE approved = 0 AND email_verified = 1 ORDER BY created_at DESC",
+        "SELECT * FROM clubs WHERE approved = 0 ORDER BY created_at DESC",
         [],
         (err, result) => {
             if (err) return res.status(500).send({ success: false });
