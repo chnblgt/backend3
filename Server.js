@@ -285,7 +285,7 @@ app.post('/createUser', async (req, res) => {
                 const verifyLink = `${FRONTEND}/verify-email?token=${token}&type=user`;
                 console.log('✅ User created. Verify link:', verifyLink);
                 await sendMail({
-                    from: `"Duguilan.com" <${process.env.GMAIL_USER}>`,
+                    from: "Duguilan.com <onboarding@resend.dev>",
                     to: email,
                     subject: 'Duguilan.com — Имэйл хаягаа баталгаажуулна уу ✉️',
                     html: verifyEmailHtml(username, verifyLink),
